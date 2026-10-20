@@ -197,7 +197,7 @@ nav button{font-size:11px;min-height:48px}nav button span{font-size:21px}
 @media(min-width:600px){#app{padding-left:24px;padding-right:24px}.card{padding:18px}.hero{padding:26px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
 
-</style></head><body>
+</style><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script></head><body>
 <main id="app"></main><div id="toast" role="status"></div>
 <script>
 const $=s=>document.querySelector(s),uid=()=>Math.random().toString(36).slice(2,9);
@@ -224,9 +224,38 @@ function defaults(){
   if([2,4].includes(d))a.push(mk("16:00","Prava kursi","drive"));
   sched[d]=a.sort((x,y)=>x.time<y.time?-1:1)}
  return mig({goals,sched,tasks:{},books:{},rev:{},logo:null})}
-const VER="19-okt, 5";let ACC=ld("st.acc",null),LI=!!ACC&&ld("st.in",0)===1,AW=!ACC,LK=false,DB=null,LL="",ST="local",EM=false,CH=[],busy=false,M2="plan";
-const save=()=>{S._t=Date.now();sv("st.d.me",S);clearTimeout(save.h);if(DB)save.h=setTimeout(push,700)};
-async function push(){try{await DB.doc("state").set({t:S._t,s:JSON.stringify({...S,logo:null})});if(S.logo&&S.logo.a!==LL){LL=S.logo.a;await DB.doc("logo").set({s:JSON.stringify(S.logo)})}ST="cloud"}catch(e){ST="err"}}
+const VER="19-okt, 6";
+const SUPABASE_URL="https://mgkeeqpdovxjjqphqgok.supabase.co";
+const SUPABASE_ANON_KEY="sb_publishable_r6byrTYOHZG5v25o5U60Dw_9um7hIQd";
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+let ACC=ld("st.acc",null),LI=false,AW=false,LK=false,DB=null,LL="",ST="local",EM=false,CH=[],busy=false,M2="plan",syncTimer=null,authBusy=false;
+const save=()=>{if(!S)return;S._t=Date.now();sv("st.d.me",S);clearTimeout(syncTimer);if(user&&sb)syncTimer=setTimeout(push,700)};
+async function push(){
+ if(!user||!S)return;
+ try{
+  const {error}=await sb.from("tracker_data").upsert({user_id:user,data:{...S,logo:null},updated_at:new Date().toISOString()},{onConflict:"user_id"});
+  if(error)throw error;ST="cloud";const st=$("#sync-status");if(st)st.textContent="☁️ Bulutga saqlandi";
+ }catch(e){ST="err";console.error("Tracker sync:",e);const st=$("#sync-status");if(st)st.textContent="Sinxronlashda xatolik. Internet va Supabase sozlamalarini tekshiring."}
+}
+async function pullCloud(){
+ if(!user)return;
+ try{
+  const {data,error}=await sb.from("tracker_data").select("data,updated_at").eq("user_id",user).maybeSingle();
+  if(error)throw error;
+  if(data&&data.data&&Object.keys(data.data).length){
+   const cloudState=mig(data.data);
+   // Prefer cloud data after first successful sign-in; preserve an existing local state only when cloud is empty.
+   S=cloudState;S._t=Date.now();sv("st.d.me",S);applyLogo();
+  }else{
+   const local=ld("st.d.me",null);
+   if(local)S=mig(local);else S=defaults();
+   await push();
+  }
+  ST="cloud";
+ }catch(e){ST="err";console.error("Tracker load:",e);S=mig(ld("st.d.me",null)||defaults())}
+}
+function authViewMessage(msg){const el=$("#er");if(el)el.textContent=msg||""}
+
 function mig(o){o.mission=o.mission||{title:"Missiya",label:"kun qoldi",start:"2026-10-15",end:"2026-12-31"};o.quran=Object.assign({next:1,pace:3,hatmJuz:0,hatms:0,log:{},sm:{},cur:null},o.quran||{});o.ielts=Object.assign({target:8,mocks:[]},o.ielts||{});o.books=o.books||{};o.rev=o.rev||{};o.tasks=o.tasks||{};const c=dk(new Date(Date.now()-90*864e5));Object.keys(o.tasks).forEach(k=>{if(k<c)delete o.tasks[k]});return o}
 function applyTheme(){const t=ld("st.theme","system"),r=document.documentElement;if(t==="system")r.removeAttribute("data-theme");else r.setAttribute("data-theme",t)}
 const goal=id=>S.goals.find(g=>g.id===id);
@@ -299,8 +328,6 @@ const chatHtml=()=>CH.length?CH.map(m=>`<div class="msg ${m.role}">${esc(m.conte
 function vAI(){if(!CHL){CHL=true;if(!CH.length&&S.ch)CH=S.ch.slice()}return`<h2>Ustoz (AI)</h2><div class="chips"><button class="sec" data-a="asp">🎤 Speaking imtihoni</button>${AQ.map((q,i)=>`<button class="sec" data-a="aq" data-i="${i}">${q}</button>`).join("")}</div><div class="card chat" id="ch">${chatHtml()}</div><div class="add"><button class="sec" data-a="atk">Oxirgi javobdagi qadamlarni vazifaga qoʻshish</button></div><textarea id="ai" rows="3" placeholder="Savolingizni yozing"></textarea><div class="add"><button class="pri" data-a="ask">Yuborish</button><button class="sec" data-a="aclr">Tozalash</button></div>`}
 function ctx(){const ts=S.tasks[dk()]||[],i=qInfo();return"Haftalik maqsadlar: "+S.goals.map(g=>g.name+" "+wkTotal(g)+"/"+g.weekly).join("; ")+". Hifz: "+i.mem+" sahifa, kuniga "+i.p+". IELTS maqsad "+S.ielts.target+", oxirgi mocklar: "+(S.ielts.mocks.slice(-6).map(m=>m.s+" "+m.b).join(", ")||"yoʻq")+". Bugun "+ts.filter(t=>t.done).length+"/"+ts.length+" vazifa bajarilgan."}
 // Supabase Edge Function: frontend-safe publishable/anon key only.
-const SUPABASE_URL = "https://mgkeeqpdovxjjqphqgok.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_r6byrTYOHZG5v25o5U60Dw_9um7hIQd";
 
 async function callTrackerAI(prompt) {
   if (SUPABASE_URL.includes("YOUR_PROJECT_REF") || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE")) {
@@ -612,7 +639,7 @@ function qHatm(){const Q=q0(),L=Q.log[dk()]||{},N=Q.hdays,sc=hsch(N),rc=hcount()
 function heat(){const c=[];for(let i=34;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=dk(d),n=(S.tasks[k]||[]).filter(t=>t.done).length+S.goals.filter(g=>(g.log[k]||0)>0).length+((S.quran.log[k]||{}).s?1:0)+((((S.pr||{})[k]||[]).filter(Boolean).length>=5)?1:0);c.push(`<i title="${k}" style="opacity:${n?Math.min(1,.3+n*.18):.12}"></i>`)}return`<div class="card"><div class="heat">${c.join("")}</div><p class="mut">Oxirgi 35 kun. Katak yorqinroq boʼlsa, shu kuni koʻproq ish bajarilgan.</p></div>`}
 function vSet(){const th=ld("st.theme","system");
  return`<h2>Koʻrinish</h2><div class="card"><div class="chips">${[["system","Tizim"],["light","Kunduz"],["dark","Tun"]].map(x=>`<button class="sec ${th===x[0]?"on":""}" data-a="th" data-v="${x[0]}">${x[1]}</button>`).join("")}</div></div>
- ${designCard()}<h2>Sinxronlash</h2><div class="card"><p>${ST==="cloud"?"☁️ Maʼlumotlar hisobingizga saqlanmoqda. Noutbukda shu havolani oching, oʻzgarishlar koʻrinadi.":ST==="err"?"Sinxronlashda xato chiqdi. Maʼlumot shu qurilmada saqlanmoqda.":"Hozircha maʼlumot faqat shu qurilmada saqlanmoqda."}</p></div>
+ ${designCard()}<h2>Sinxronlash</h2><div class="card"><p id="sync-status">${!user?"🔒 Bulutli sinxronlash uchun hisobga kiring.":ST==="cloud"?"☁️ Bulut bilan sinxronlangan.":ST==="err"?"Sinxronlashda xatolik yuz berdi.":"Maʼlumotlar qurilmada saqlanmoqda."}</p><p class="mut" style="font-size:12px">Hisob: ${esc(ACC?.email||"")}</p><button class="sec" data-a="logout">Hisobdan chiqish</button></div>
  <h2>Telefon belgisi</h2><div class="card">${S.logo?`<img src="${S.logo.a}" width="72" height="72" alt="Logotip" style="border-radius:16px;display:block;margin-bottom:10px">`:""}<input type="file" id="lf" accept="image/*"></div>
  <h2>Hisob</h2><div class="card"><div class="lg"><b>${esc(ACC?ACC.u:"")}</b><button class="sec" data-a="logout2">Chiqish</button></div><p class="mut">Versiya: ${VER}</p></div><div class="card" hidden><p class="mut">${ld("st.lock",null)?"Qulf yoqilgan. Ilovani yopib qaytganingizda parol soʻraydi.":"Parol qoʻyilsa, ilova ochilganda uni soʻraydi."}</p><div class="add"><input type="password" id="np" placeholder="Yangi parol, kamida 4 belgi" autocomplete="new-password"><button class="pri" data-a="lset">${ld("st.lock",null)?"Oʻzgartirish":"Oʻrnatish"}</button>${ld("st.lock",null)?`<button class="sec" data-a="lclr">Olib tashlash</button>`:""}</div><p class="mut">Bu qulf faqat shu qurilmada ishlaydi va maʼlumotni shifrlamaydi.</p></div>
  <h2>Zaxira nusxa</h2><div class="card"><textarea id="bk" readonly>${esc(JSON.stringify({...S,logo:null}))}</textarea><div class="add"><button class="sec" data-a="copy">Nusxa olish</button></div><textarea id="im" placeholder="Zaxira nusxani shu yerga joylang"></textarea><div class="add"><button class="sec" data-a="imp">Tiklash</button></div></div>`}
@@ -621,7 +648,7 @@ function vMore(){const subs=[["plan","Jadval"],["focus","Fokus"],["week","Hafta"
 const TABS=[["today","📅","Bugun",vToday],["goals","🎯","Maqsad",vGoals],["quran","📖","Quron",vQuran],["ielts","🎧","IELTS",vIelts],["ai","✨","Ustoz",vAI],["more","☰","Yana",vMore]];
 TABS.splice(0,TABS.length,["today","📅","Bugun",()=>grp("today")],["quran","📖","Quron",()=>grp("quran")],["ielts","🎧","IELTS",()=>banner("ielts")+vIelts()],["grow","🌱","Oʻsish",()=>grp("grow")],["gym","💪","Zal",()=>grp("gym")],["ai","✨","Ustoz",()=>vAI()],["set","","Sozlamalar",()=>vSet()],["search","","Qidiruv",()=>vSearch()]);
 function render(){applyDesign();document.body.dataset.sec=T;const a=$("#app");if(gate(a))return;if(LK){a.innerHTML=`<div class="card" style="margin-top:14vh;text-align:center"><div class="ar" style="font-size:30px">بِسْمِ ٱللَّٰهِ</div><h2>Ilova qulflangan</h2><input id="lp" type="password" placeholder="Parol" autocomplete="current-password" style="width:100%;margin:8px 0"><p class="mut" id="lerr" style="color:#c2410c"></p><button class="pri" data-a="unlock">Ochish</button></div>`;return}
- if(!user){a.innerHTML=`<div class="login card"><h1>Shaxsiy tracker</h1><p class="mut">${authMode==="in"?"Hisobingizga kiring":"Yangi hisob yarating"}</p><input id="un" placeholder="Foydalanuvchi nomi" autocapitalize="none" autocomplete="username"><input id="pw" type="password" placeholder="Parol (kamida 4 belgi)" autocomplete="${authMode==="in"?"current-password":"new-password"}"><p class="mut" id="er" style="color:#d9480f"></p><div class="add"><button class="pri" data-a="auth">${authMode==="in"?"Kirish":"Roʻyxatdan oʻtish"}</button><button class="sec" data-a="amode">${authMode==="in"?"Hisob yaratish":"Kirishga qaytish"}</button></div></div>`;return}
+ if(!user){a.innerHTML=`<div class="login card"><div style="font-size:36px">🌿</div><h1>Shaxsiy tracker</h1><p class="mut">${authMode==="in"?"Hisobingizga kiring":"Yangi hisob yarating"}</p><input id="un" type="email" placeholder="Email manzilingiz" autocapitalize="none" autocomplete="email"><input id="pw" type="password" placeholder="Parol (kamida 6 belgi)" autocomplete="${authMode==="in"?"current-password":"new-password"}"><p class="mut" id="er" style="color:#d9480f"></p><div class="add"><button class="pri" data-a="auth">${authBusy?"Kuting...":(authMode==="in"?"Kirish":"Roʻyxatdan oʻtish")}</button><button class="sec" data-a="amode">${authMode==="in"?"Hisob yaratish":"Kirishga qaytish"}</button></div>${authMode==="in"?'<button class="sec" style="width:100%;margin-top:8px" data-a="reset">Parolni unutdingizmi?</button>':""}<p class="mut" style="font-size:12px;margin-top:12px">Maʼlumotlaringiz hisobingizga bogʻlanadi va boshqa qurilmalarda sinxronlanadi.</p></div>`;return}
  const v=TABS.find(t=>t[0]===T);a.innerHTML=v[3]()+`<button class="gear" data-a="tab" data-t="set" aria-label="Sozlamalar">⚙</button><button class="gear" style="right:62px" data-a="tab" data-t="search" aria-label="Qidiruv">🔍</button><header class="top"><b>${v[2]}</b><span><button data-a="tab" data-t="search" aria-label="Qidiruv">🔍</button><button data-a="tab" data-t="set" aria-label="Sozlamalar">⚙</button></span></header>${QS?sheetHtml():""}${T==="ai"?"":`<button class="fab" data-a="qs" aria-label="Tez qoʻshish">+</button>`}<nav>${TABS.filter(t=>t[1]).map(t=>`<button data-a="tab" data-t="${t[0]}" class="${t[0]===T?"on":""}"><span>${t[1]}</span>${t[2]}</button>`).join("")}</nav>`}
 const fmt=s=>String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
 function tick(){if(!F.run)return;F.left=Math.max(0,Math.round((F.end-Date.now())/1000));const e=$("#tm");if(e)e.textContent=fmt(F.left);
@@ -629,14 +656,37 @@ function tick(){if(!F.run)return;F.left=Math.max(0,Math.round((F.end-Date.now())
 function applyLogo(){if(!S||!S.logo)return;[["apple-touch-icon",S.logo.a],["icon",S.logo.b]].forEach(([r,h])=>{let l=document.querySelector(`link[rel="${r}"]`);if(!l){l=document.createElement("link");l.rel=r;document.head.appendChild(l)}l.href=h});
  try{const m={name:"Shaxsiy tracker",short_name:"Tracker",start_url:location.href,display:"standalone",background_color:"#0a1815",theme_color:"#0e6b55",icons:[{src:S.logo.b,sizes:"512x512",type:"image/png"}]};let l=document.querySelector("link[rel=manifest]");if(!l){l=document.createElement("link");l.rel="manifest";document.head.appendChild(l)}l.href=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:"application/manifest+json"}))}catch(e){}}
 function mkLogo(f){const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const c=n=>{const k=document.createElement("canvas");k.width=k.height=n;const x=k.getContext("2d"),s=Math.min(im.width,im.height);x.fillStyle="#fff";x.fillRect(0,0,n,n);x.drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,n,n);return k.toDataURL("image/png")};S.logo={a:c(180),b:c(512)};save();applyLogo();render();toast("Logotip saqlandi")};im.src=r.result};r.readAsDataURL(f)}
-function open(u){user=u;sv("st.sess",u);S=ld("st.d."+u,null)||defaults();save();applyLogo();T="today";render()}
-async function auth(){const n=$("#un").value.trim().toLowerCase(),p=$("#pw").value,er=$("#er"),us=ld("st.users",{});
- if(n.length<2||p.length<4){er.textContent="Nom kamida 2, parol kamida 4 belgi boʻlsin.";return}
- const h=await hash(p,n);
- if(authMode==="up"){if(us[n]){er.textContent="Bu nom band. Boshqa nom tanlang yoki kiring.";return}us[n]=h;sv("st.users",us);open(n)}
- else{if(us[n]!==h){er.textContent="Nom yoki parol notoʻgʻri.";return}open(n)}}
-document.addEventListener("click",e=>{const b=e.target.closest("[data-a]");if(!b)return;const d=b.dataset,k=dk(),a=d.a;if(X2.has(a))return;
+function open(u){user=u;T="today";render()}
+async function auth(){
+ if(authBusy)return;
+ const email=($("#un")?.value||"").trim().toLowerCase(),password=$("#pw")?.value||"";
+ if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){authViewMessage("Toʻgʻri email manzilini kiriting.");return}
+ if(password.length<6){authViewMessage("Parol kamida 6 belgidan iborat boʻlsin.");return}
+ authBusy=true;render();
+ try{
+  let result;
+  if(authMode==="up") result=await sb.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});
+  else result=await sb.auth.signInWithPassword({email,password});
+  if(result.error)throw result.error;
+  if(authMode==="up"&&!result.data.session){
+   authBusy=false;render();authViewMessage("Hisob yaratildi! Emailingizni tekshirib, tasdiqlash havolasini bosing. Soʻng tizimga kiring.");return;
+  }
+  const u=result.data.user;
+  if(!u)throw new Error("Hisob topilmadi. Emailingizni tasdiqlaganingizni tekshiring.");
+  user=u.id;ACC={email:u.email,id:u.id};sv("st.acc",ACC);
+  await pullCloud();authBusy=false;T="today";applyLogo();render();toast("Xush kelibsiz!");
+ }catch(e){authBusy=false;render();authViewMessage(e.message||"Kirishda xatolik yuz berdi.");}
+}
+async function resetPassword(){
+ const email=($("#un")?.value||"").trim().toLowerCase();
+ if(!email){authViewMessage("Avval email manzilingizni kiriting.");return}
+ const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+ authViewMessage(error?error.message:"Parolni tiklash havolasi emailingizga yuborildi.");
+}
+document.addEventListener("click",async e=>{const b=e.target.closest("[data-a]");if(!b)return;const d=b.dataset,k=dk(),a=d.a;if(X2.has(a))return;
  if(a==="auth")return auth();
+ if(a==="reset")return resetPassword();
+ if(a==="logout"){if(!confirm("Hisobdan chiqmoqchimisiz?"))return;await sb.auth.signOut();user=null;S=mig(ld("st.d.me",null)||defaults());ST="local";authMode="in";render();return}
  if(a==="amode"){authMode=authMode==="in"?"up":"in";return render()}
  if(a==="tab"){T=d.t;return render()}
  if(a==="addTask"){const v=$("#nt").value.trim();if(!v)return;S.tasks[k].push({id:uid(),t:v,time:($("#ntm")||{}).value||"",g:$("#ng").value,done:false})}
@@ -811,6 +861,18 @@ async function cloud(){const uc=await claude.use("user"),db=await claude.use("db
  const lo=await DB.doc("logo").get();if(lo.exists&&!S.logo){S.logo=JSON.parse(lo.data().s);LL=S.logo.a;applyLogo()}else if(S.logo)LL="";
  DB.doc("state").onSnapshot(s=>{if(s.exists&&s.data().t>(S._t||0)){apply(s.data());render()}});
  ST="cloud";render()}
-(function(){applyTheme();const u=ld("st.sess",null);user="me";S=mig(ld("st.d.me",null)||(u&&ld("st.d."+u,null))||defaults());sv("st.d.me",S);applyLogo();render();
- setTimeout(()=>{if(AW){AW=false;render()}},5000);let n=0;const go=()=>{if(window.claude&&claude.use)cloud().catch(()=>{});else if(n++<8)setTimeout(go,700)};go()})();
+(async function(){
+ applyTheme();user=null;S=mig(ld("st.d.me",null)||defaults());applyLogo();render();
+ try{
+  const {data:{session}}=await sb.auth.getSession();
+  if(session?.user){user=session.user.id;ACC={id:session.user.id,email:session.user.email};sv("st.acc",ACC);await pullCloud();render()}
+  sb.auth.onAuthStateChange(async(event,session)=>{
+   if(event==="SIGNED_OUT"){user=null;render();return}
+   if(session?.user&&user!==session.user.id){
+    user=session.user.id;ACC={id:session.user.id,email:session.user.email};sv("st.acc",ACC);
+    await pullCloud();render();
+   }
+  });
+ }catch(e){console.error("Supabase auth init:",e)}
+})();
 </script></body></html>
